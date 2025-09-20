@@ -7,34 +7,65 @@ type Stats = {
   sorted: number[];
 };
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    // Some fetch errors may be Response objects or JSON-like
+    return JSON.stringify(err);
+  } catch {
+    return "Request failed";
+  }
+}
+
 export default function Home() {
   const [raw, setRaw] = useState("1, 2, 3, 4, 5");
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null); setStats(null); setLoading(true);
+    setError(null);
+    setStats(null);
+    setLoading(true);
     try {
       // Use FastAPI directly when running locally, Vercel route in production
       const isLocal =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1");
 
       const apiUrl = isLocal ? "http://localhost:8000/" : "/api/stats";
 
       const res = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ numbers: raw }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ numbers: raw }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || data?.error || "Request failed");
-      setStats(data);
-    } catch (err: any) {
-      setError(err.message);
+      const contentType = res.headers.get("content-type") || "";
+      const data = contentType.includes("application/json")
+        ? await res.json()
+        : await res.text();
+
+      if (!res.ok) {
+        const msg =
+          typeof data === "string"
+            ? data
+            : (data as { detail?: string; error?: string })?.detail ||
+              (data as { error?: string }).error ||
+              "Request failed";
+        throw new Error(msg);
+      }
+
+      if (typeof data === "string") {
+        throw new Error("Server returned non-JSON response.");
+      }
+
+      setStats(data as Stats);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -45,7 +76,8 @@ export default function Home() {
       <div style={styles.card}>
         <h1 style={styles.title}>Simple Stats (Python backend)</h1>
         <p style={styles.subtitle}>
-          Enter numbers separated by commas or spaces. Example: <code>10, 3.5, -2 7</code>
+          Enter numbers separated by commas or spaces. Example:{" "}
+          <code>10, 3.5, -2 7</code>
         </p>
 
         <form onSubmit={onSubmit} style={styles.form}>
@@ -74,7 +106,10 @@ export default function Home() {
               <li><strong>Min:</strong> {stats.min}</li>
               <li><strong>Max:</strong> {stats.max}</li>
               <li><strong>Std Dev (Population):</strong> {stats.stdevPopulation}</li>
-              <li><strong>Std Dev (Sample):</strong> {Number.isNaN(stats.stdevSample) ? "n/a (need ≥2)" : stats.stdevSample}</li>
+              <li>
+                <strong>Std Dev (Sample):</strong>{" "}
+                {Number.isNaN(stats.stdevSample) ? "n/a (need ≥2)" : stats.stdevSample}
+              </li>
               <li><strong>Sorted:</strong> {stats.sorted.join(", ")}</li>
             </ul>
           </div>
