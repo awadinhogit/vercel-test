@@ -6,45 +6,53 @@ import math
 
 app = FastAPI()
 
-# --- Health + path debug (helps validate routing) ---
+# ---- Health (helps verify the exact path FastAPI sees in prod) ----
 @app.get("")
 @app.get("/")
+@app.get("/api/stats")
+@app.get("/api/stats/")
 async def health(req: Request):
-    # Return what FastAPI thinks the path is
     return {"ok": True, "path": req.url.path}
 
-# --- Input model ---
 class NumbersIn(BaseModel):
     numbers: Union[str, List[float]]
 
-# --- Helpers ---
 def parse_numbers(value: Union[str, List[float]]) -> List[float]:
     if isinstance(value, list):
         return [float(x) for x in value]
     tokens = str(value).replace(",", " ").split()
-    try:
-        return [float(t) for t in tokens]
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Input must be numbers separated by commas/spaces")
+    out: List[float] = []
+    for t in tokens:
+        try:
+            out.append(float(t))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Input must be numbers separated by commas/spaces")
+    if not out:
+        raise HTTPException(status_code=400, detail="No numbers provided")
+    return out
 
-# Support BOTH /api/stats and /api/stats/ (root inside the function)
+# ---- Support BOTH adapter behaviors (root & prefixed) ----
 @app.post("")
 @app.post("/")
+@app.post("/api/stats")
+@app.post("/api/stats/")
 def stats(payload: NumbersIn):
     nums = parse_numbers(payload.numbers)
-    if not nums:
-        raise HTTPException(status_code=400, detail="No numbers provided")
-
     nums_sorted = sorted(nums)
     n = len(nums)
     mean = sum(nums) / n
-    median = nums_sorted[n//2] if n % 2 else (nums_sorted[n//2 - 1] + nums_sorted[n//2]) / 2
-    stdev_pop = math.sqrt(sum((x - mean) ** 2 for x in nums) / n)
-    stdev_sample = math.sqrt(sum((x - mean) ** 2 for x in nums) / (n - 1)) if n > 1 else float("nan")
+    median = nums_sorted[n // 2] if n % 2 else (nums_sorted[n // 2 - 1] + nums_sorted[n // 2]) / 2
+    var_pop = sum((x - mean) ** 2 for x in nums) / n
+    var_samp = sum((x - mean) ** 2 for x in nums) / (n - 1) if n > 1 else float("nan")
 
     return {
-        "count": n, "sum": sum(nums), "mean": mean, "median": median,
-        "min": min(nums), "max": max(nums),
-        "stdevPopulation": stdev_pop, "stdevSample": stdev_sample,
+        "count": n,
+        "sum": sum(nums),
+        "mean": mean,
+        "median": median,
+        "min": min(nums),
+        "max": max(nums),
+        "stdevPopulation": math.sqrt(var_pop),
+        "stdevSample": math.sqrt(var_samp),
         "sorted": nums_sorted,
     }
