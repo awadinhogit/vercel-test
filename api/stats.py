@@ -1,14 +1,23 @@
 # api/stats.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Union
 import math
 
 app = FastAPI()
 
+# --- Health + path debug (helps validate routing) ---
+@app.get("")
+@app.get("/")
+async def health(req: Request):
+    # Return what FastAPI thinks the path is
+    return {"ok": True, "path": req.url.path}
+
+# --- Input model ---
 class NumbersIn(BaseModel):
     numbers: Union[str, List[float]]
 
+# --- Helpers ---
 def parse_numbers(value: Union[str, List[float]]) -> List[float]:
     if isinstance(value, list):
         return [float(x) for x in value]
@@ -18,7 +27,7 @@ def parse_numbers(value: Union[str, List[float]]) -> List[float]:
     except ValueError:
         raise HTTPException(status_code=400, detail="Input must be numbers separated by commas/spaces")
 
-# Support BOTH /api/stats and /api/stats/
+# Support BOTH /api/stats and /api/stats/ (root inside the function)
 @app.post("")
 @app.post("/")
 def stats(payload: NumbersIn):
